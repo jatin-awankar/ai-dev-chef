@@ -1,0 +1,22 @@
+{
+  "name": "ai-dev-chef",
+  "version": "0.1.0",
+  "description": "AI-powered developer assistant CLI scaffold.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "ai-dev-chef": "./bin/ai-dev-chef.js"
+  },
+  "scripts": {
+    "start": "node ./bin/ai-dev-chef.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "openai": "^6.7.0",
+    "ora": "^9.0.0"
+  }
+}
