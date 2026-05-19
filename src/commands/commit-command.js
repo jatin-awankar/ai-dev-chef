@@ -10,14 +10,16 @@ export function createCommitCommand(commandService) {
         )
         .option("-s, --style <style>", "Commit style convention", "conventional")
         .option("--scope <scope>", "Optional commit scope")
+        .option("-y, --yes", "Skip confirmation and commit automatically")
         .addHelpText(
           "after",
-          "\nExample:\n  ai-dev-chef commit --style conventional --scope cli"
+          "\nExample:\n  aidevchef commit --style conventional --scope cli"
         )
         .action(async (options) => {
           await commandService.commit({
             style: options.style,
-            scope: options.scope ?? ""
+            scope: options.scope ?? "",
+            yes: options.yes ?? false
           });
         });
     }

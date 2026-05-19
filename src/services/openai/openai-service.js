@@ -5,10 +5,10 @@ import {
   OpenAIConfigurationError,
   OpenAITimeoutError,
   isRetryableOpenAIError,
-  normalizeOpenAIError
+  normalizeOpenAIError,
 } from "./openai-service-errors.js";
 
-const DEFAULT_MODEL = "gpt-5.4";
+const DEFAULT_MODEL = "gpt-5.1";
 
 export class OpenAIService {
   constructor({
@@ -17,7 +17,7 @@ export class OpenAIService {
     timeoutMs = 60_000,
     maxRetries = 2,
     retryBaseDelayMs = 500,
-    retryMaxDelayMs = 5_000
+    retryMaxDelayMs = 5_000,
   } = {}) {
     this.configLoader = configLoader;
     this.clientFactory = clientFactory;
@@ -35,7 +35,8 @@ export class OpenAIService {
     temperature,
     timeoutMs,
     maxRetries,
-    metadata
+    metadata,
+    signal,
   }) {
     const requestPayload = await this.#buildRequestPayload({
       input,
@@ -44,22 +45,22 @@ export class OpenAIService {
       maxOutputTokens,
       temperature,
       metadata,
-      stream: false
+      stream: false,
     });
 
     const response = await this.#executeWithRetry(
       async () => {
         const client = await this.#createClient(timeoutMs);
-        return client.responses.create(requestPayload);
+        return client.responses.create(requestPayload, { signal });
       },
-      { timeoutMs, maxRetries }
+      { timeoutMs, maxRetries, signal },
     );
 
     return {
       id: response.id,
       model: response.model,
       outputText: response.output_text ?? "",
-      response
+      response,
     };
   }
 
@@ -71,7 +72,8 @@ export class OpenAIService {
     temperature,
     timeoutMs,
     maxRetries,
-    metadata
+    metadata,
+    signal,
   }) {
     const requestPayload = await this.#buildRequestPayload({
       input,
@@ -80,29 +82,35 @@ export class OpenAIService {
       maxOutputTokens,
       temperature,
       metadata,
-      stream: true
+      stream: true,
     });
 
     const stream = await this.#executeWithRetry(
       async () => {
         const client = await this.#createClient(timeoutMs);
-        return client.responses.create(requestPayload);
+        return client.responses.create(requestPayload, { signal });
       },
-      { timeoutMs, maxRetries }
+      { timeoutMs, maxRetries, signal },
     );
 
     const requestTimeoutMs = timeoutMs ?? this.timeoutMs;
 
-    for await (const event of this.#iterateStreamWithTimeout(stream, requestTimeoutMs)) {
+    for await (const event of this.#iterateStreamWithTimeout(
+      stream,
+      requestTimeoutMs,
+      signal,
+    )) {
       if (event?.type === "error") {
-        throw normalizeOpenAIError(event.error, { fallbackMessage: "OpenAI streaming failed." });
+        throw normalizeOpenAIError(event.error, {
+          fallbackMessage: "OpenAI streaming failed.",
+        });
       }
 
       if (event?.type === "response.output_text.delta") {
         yield {
           type: "text_delta",
           delta: event.delta ?? "",
-          event
+          event,
         };
         continue;
       }
@@ -111,14 +119,14 @@ export class OpenAIService {
         yield {
           type: "text_done",
           text: event.text ?? "",
-          event
+          event,
         };
         continue;
       }
 
       yield {
         type: "event",
-        event
+        event,
       };
     }
   }
@@ -128,7 +136,7 @@ export class OpenAIService {
     return this.clientFactory({
       apiKey,
       maxRetries: 0,
-      timeout: timeoutMs ?? this.timeoutMs
+      timeout: timeoutMs ?? this.timeoutMs,
     });
   }
 
@@ -138,7 +146,7 @@ export class OpenAIService {
 
     if (!apiKey) {
       throw new OpenAIConfigurationError(
-        "OpenAI API key is missing. Run `aidevchef auth` before making requests."
+        "OpenAI API key is missing. Run `aidevchef auth` before making requests.",
       );
     }
 
@@ -152,19 +160,22 @@ export class OpenAIService {
     maxOutputTokens,
     temperature,
     metadata,
-    stream
+    stream,
   }) {
     const config = await this.configLoader();
-    const selectedModel = model ?? config?.modelPreferences?.defaultModel ?? DEFAULT_MODEL;
+    const selectedModel =
+      model ?? config?.modelPreferences?.defaultModel ?? DEFAULT_MODEL;
 
     if (!input) {
-      throw new OpenAIConfigurationError("`input` is required for OpenAI responses.");
+      throw new OpenAIConfigurationError(
+        "`input` is required for OpenAI responses.",
+      );
     }
 
     const payload = {
       model: selectedModel,
       input,
-      stream
+      stream,
     };
 
     if (instructions) {
@@ -186,15 +197,27 @@ export class OpenAIService {
     return payload;
   }
 
-  async #executeWithRetry(operation, { timeoutMs, maxRetries } = {}) {
+  async #executeWithRetry(operation, { timeoutMs, maxRetries, signal } = {}) {
     const requestTimeoutMs = timeoutMs ?? this.timeoutMs;
     const retryLimit = maxRetries ?? this.maxRetries;
 
     return withRetry(
       async () => {
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("Request aborted.");
+        }
+
         try {
-          return await this.#runWithTimeout(operation, requestTimeoutMs);
+          return await this.#runWithTimeout(
+            operation,
+            requestTimeoutMs,
+            signal,
+          );
         } catch (error) {
+          if (this.#isAbortLikeError(error, signal)) {
+            throw error;
+          }
+
           throw normalizeOpenAIError(error);
         }
       },
@@ -202,14 +225,16 @@ export class OpenAIService {
         maxRetries: retryLimit,
         baseDelayMs: this.retryBaseDelayMs,
         maxDelayMs: this.retryMaxDelayMs,
-        shouldRetry: (error) => isRetryableOpenAIError(error)
-      }
+        shouldRetry: (error) =>
+          !this.#isAbortLikeError(error, signal) &&
+          isRetryableOpenAIError(error),
+      },
     );
   }
 
-  async #runWithTimeout(operation, timeoutMs) {
+  async #runWithTimeout(operation, timeoutMs, signal) {
     const timeoutError = new OpenAITimeoutError(
-      `OpenAI request timed out after ${timeoutMs}ms.`
+      `OpenAI request timed out after ${timeoutMs}ms.`,
     );
 
     let timeoutId;
@@ -217,19 +242,27 @@ export class OpenAIService {
       timeoutId = setTimeout(() => reject(timeoutError), timeoutMs);
     });
 
+    const { promise: abortPromise, cleanup: cleanupAbortListener } =
+      this.#createAbortPromise(signal);
+
     try {
-      return await Promise.race([operation(), timeoutPromise]);
+      return await Promise.race([operation(), timeoutPromise, abortPromise]);
     } finally {
       clearTimeout(timeoutId);
+      cleanupAbortListener();
     }
   }
 
-  async *#iterateStreamWithTimeout(stream, timeoutMs) {
+  async *#iterateStreamWithTimeout(stream, timeoutMs, signal) {
     const iterator = stream[Symbol.asyncIterator]();
 
     try {
       while (true) {
-        const { done, value } = await this.#runWithTimeout(() => iterator.next(), timeoutMs);
+        const { done, value } = await this.#runWithTimeout(
+          () => iterator.next(),
+          timeoutMs,
+          signal,
+        );
         if (done) {
           return;
         }
@@ -241,5 +274,53 @@ export class OpenAIService {
         await iterator.return();
       }
     }
+  }
+
+  #createAbortPromise(signal) {
+    if (!signal) {
+      return {
+        promise: new Promise(() => {}),
+        cleanup: () => {},
+      };
+    }
+
+    if (signal.aborted) {
+      return {
+        promise: Promise.reject(signal.reason ?? new Error("Request aborted.")),
+        cleanup: () => {},
+      };
+    }
+
+    let abortListener;
+    const promise = new Promise((_, reject) => {
+      abortListener = () => {
+        reject(signal.reason ?? new Error("Request aborted."));
+      };
+
+      signal.addEventListener("abort", abortListener, { once: true });
+    });
+
+    return {
+      promise,
+      cleanup: () => {
+        signal.removeEventListener("abort", abortListener);
+      },
+    };
+  }
+
+  #isAbortLikeError(error, signal) {
+    if (signal?.aborted) {
+      return true;
+    }
+
+    if (error?.name === "AbortError" || error?.name === "APIUserAbortError") {
+      return true;
+    }
+
+    if (error?.code === "ABORT_ERR") {
+      return true;
+    }
+
+    return false;
   }
 }

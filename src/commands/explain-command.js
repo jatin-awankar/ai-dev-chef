@@ -8,15 +8,15 @@ export function createExplainCommand(commandService) {
         .description(
           "Generate an explanation for code snippets, error messages, or command output."
         )
-        .argument("[target]", "File path, symbol, or topic to explain")
+        .argument("<file-or-text>", "Stack trace file path or pasted error text")
         .option("-c, --context <text>", "Additional context to improve explanation")
         .addHelpText(
           "after",
-          "\nExample:\n  ai-dev-chef explain src/index.js --context \"entrypoint flow\""
+          "\nExamples:\n  aidevchef explain ./logs/error.log\n  aidevchef explain \"TypeError: x is not a function\\n    at main (index.js:12:3)\""
         )
-        .action(async (target, options) => {
+        .action(async (targetInput, options) => {
           await commandService.explain({
-            target,
+            target: targetInput,
             context: options.context ?? ""
           });
         });

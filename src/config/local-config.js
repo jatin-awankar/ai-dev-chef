@@ -7,16 +7,16 @@ const CONFIG_FILE_NAME = "config.json";
 
 const DEFAULT_CONFIG = {
   apiKeys: {
-    openai: ""
+    openai: "",
   },
   modelPreferences: {
-    defaultModel: "gpt-5.4",
-    fallbackModel: "gpt-5.4-mini"
+    defaultModel: "gpt-5.1",
+    fallbackModel: "gpt-5.4-mini",
   },
   theme: {
     name: "default",
-    useColor: true
-  }
+    useColor: true,
+  },
 };
 
 function isPlainObject(value) {
@@ -80,7 +80,11 @@ export async function saveConfig(config) {
   const normalizedConfig = normalizeConfig(config);
 
   await mkdir(configDirectory, { recursive: true });
-  await writeFile(configPath, `${JSON.stringify(normalizedConfig, null, 2)}\n`, "utf8");
+  await writeFile(
+    configPath,
+    `${JSON.stringify(normalizedConfig, null, 2)}\n`,
+    "utf8",
+  );
 
   return normalizedConfig;
 }

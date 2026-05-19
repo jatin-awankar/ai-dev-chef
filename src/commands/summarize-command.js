@@ -8,15 +8,15 @@ export function createSummarizeCommand(commandService) {
         .description(
           "Produce concise summaries from files, diffs, logs, or recent project activity."
         )
-        .argument("[source]", "Path or source identifier to summarize")
+        .argument("<path>", "File or folder path to summarize")
         .option("-f, --format <format>", "Summary format", "bullet")
         .addHelpText(
           "after",
-          "\nExample:\n  ai-dev-chef summarize src --format bullet"
+          "\nExample:\n  aidevchef summarize src --format bullet"
         )
-        .action(async (source, options) => {
+        .action(async (targetPath, options) => {
           await commandService.summarize({
-            source,
+            source: targetPath,
             format: options.format
           });
         });
