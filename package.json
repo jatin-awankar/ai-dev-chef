@@ -23,11 +23,15 @@
     "LICENSE"
   ],
   "bin": {
-    "fortify": "./bin/fortify.js"
+    "fortify": "bin/fortify.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jatin-awankar/fortify"
+    "url": "git+https://github.com/jatin-awankar/fortify.git"
+  },
+  "homepage": "https://github.com/jatin-awankar/fortify#readme",
+  "bugs": {
+    "url": "https://github.com/jatin-awankar/fortify/issues"
   },
   "scripts": {
     "start": "node ./bin/fortify.js",
