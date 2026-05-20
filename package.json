@@ -12,7 +12,9 @@
     "summarize",
     "explain",
     "developer-tools",
-    "fortify"
+    "fortify",
+    "ai",
+    "terminal"
   ],
   "files": [
     "bin/",
@@ -22,6 +24,10 @@
   ],
   "bin": {
     "fortify": "./bin/fortify.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jatin-awankar/fortify"
   },
   "scripts": {
     "start": "node ./bin/fortify.js",
