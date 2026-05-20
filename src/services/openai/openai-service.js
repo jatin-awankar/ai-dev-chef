@@ -1,9 +1,12 @@
 import OpenAI from "openai";
+import { appMetadata } from "../../config/app-metadata.js";
 import { loadConfig } from "../../config/index.js";
+import { resolveModelChain } from "../../config/model-preferences.js";
 import { withRetry } from "../../utils/retry.js";
 import {
   OpenAIConfigurationError,
   OpenAITimeoutError,
+  isModelFallbackEligibleError,
   isRetryableOpenAIError,
   normalizeOpenAIError,
 } from "./openai-service-errors.js";
@@ -37,31 +40,37 @@ export class OpenAIService {
     maxRetries,
     metadata,
     signal,
+    onModelFallback,
   }) {
-    const requestPayload = await this.#buildRequestPayload({
-      input,
-      model,
-      instructions,
-      maxOutputTokens,
-      temperature,
-      metadata,
-      stream: false,
-    });
+    return this.#executeWithModelFallback(
+      async (selectedModel) => {
+        const requestPayload = await this.#buildRequestPayload({
+          input,
+          selectedModel,
+          instructions,
+          maxOutputTokens,
+          temperature,
+          metadata,
+          stream: false,
+        });
 
-    const response = await this.#executeWithRetry(
-      async () => {
-        const client = await this.#createClient(timeoutMs);
-        return client.responses.create(requestPayload, { signal });
+        const response = await this.#executeWithRetry(
+          async () => {
+            const client = await this.#createClient(timeoutMs);
+            return client.responses.create(requestPayload, { signal });
+          },
+          { timeoutMs, maxRetries, signal },
+        );
+
+        return {
+          id: response.id,
+          model: response.model,
+          outputText: response.output_text ?? "",
+          response,
+        };
       },
-      { timeoutMs, maxRetries, signal },
+      { model, onModelFallback },
     );
-
-    return {
-      id: response.id,
-      model: response.model,
-      outputText: response.output_text ?? "",
-      response,
-    };
   }
 
   async *streamResponse({
@@ -74,10 +83,78 @@ export class OpenAIService {
     maxRetries,
     metadata,
     signal,
+    onModelFallback,
+  }) {
+    const modelChain = await this.#resolveModelChain(model);
+    let lastError;
+
+    for (let modelIndex = 0; modelIndex < modelChain.length; modelIndex += 1) {
+      const selectedModel = modelChain[modelIndex];
+      const modelStream = this.#streamForModel({
+        input,
+        selectedModel,
+        instructions,
+        maxOutputTokens,
+        temperature,
+        timeoutMs,
+        maxRetries,
+        metadata,
+        signal,
+      });
+      const modelIterator = modelStream[Symbol.asyncIterator]();
+
+      try {
+        while (true) {
+          const { done, value } = await modelIterator.next();
+          if (done) {
+            break;
+          }
+
+          yield value;
+        }
+
+        return;
+      } catch (error) {
+        if (typeof modelIterator.return === "function") {
+          try {
+            await modelIterator.return();
+          } catch {
+            // Best-effort cleanup between model attempts.
+          }
+        }
+
+        lastError = normalizeOpenAIError(error);
+        const nextModel = modelChain[modelIndex + 1];
+
+        if (!nextModel || !isModelFallbackEligibleError(lastError)) {
+          throw lastError;
+        }
+
+        onModelFallback?.({
+          fromModel: selectedModel,
+          toModel: nextModel,
+          error: lastError,
+        });
+      }
+    }
+
+    throw lastError;
+  }
+
+  async *#streamForModel({
+    input,
+    selectedModel,
+    instructions,
+    maxOutputTokens,
+    temperature,
+    timeoutMs,
+    maxRetries,
+    metadata,
+    signal,
   }) {
     const requestPayload = await this.#buildRequestPayload({
       input,
-      model,
+      selectedModel,
       instructions,
       maxOutputTokens,
       temperature,
@@ -146,25 +223,60 @@ export class OpenAIService {
 
     if (!apiKey) {
       throw new OpenAIConfigurationError(
-        "OpenAI API key is missing. Run `aidevchef auth` before making requests.",
+        `OpenAI API key is missing. Run \`${appMetadata.cliName} auth\` before making requests.`,
       );
     }
 
     return apiKey;
   }
 
+  async #resolveModelChain(explicitModel) {
+    const config = await this.configLoader();
+    return resolveModelChain(config, explicitModel, DEFAULT_MODEL);
+  }
+
+  async #executeWithModelFallback(operation, { model, onModelFallback } = {}) {
+    const modelChain = await this.#resolveModelChain(model);
+    let lastError;
+
+    for (let modelIndex = 0; modelIndex < modelChain.length; modelIndex += 1) {
+      const selectedModel = modelChain[modelIndex];
+
+      try {
+        return await operation(selectedModel);
+      } catch (error) {
+        lastError = normalizeOpenAIError(error);
+        const nextModel = modelChain[modelIndex + 1];
+
+        if (!nextModel || !isModelFallbackEligibleError(lastError)) {
+          throw lastError;
+        }
+
+        onModelFallback?.({
+          fromModel: selectedModel,
+          toModel: nextModel,
+          error: lastError,
+        });
+      }
+    }
+
+    throw lastError;
+  }
+
   async #buildRequestPayload({
     input,
-    model,
+    selectedModel,
     instructions,
     maxOutputTokens,
     temperature,
     metadata,
     stream,
   }) {
-    const config = await this.configLoader();
-    const selectedModel =
-      model ?? config?.modelPreferences?.defaultModel ?? DEFAULT_MODEL;
+    if (!selectedModel) {
+      throw new OpenAIConfigurationError(
+        "A model is required for OpenAI responses.",
+      );
+    }
 
     if (!input) {
       throw new OpenAIConfigurationError(
@@ -173,7 +285,7 @@ export class OpenAIService {
     }
 
     const payload = {
-      model: selectedModel,
+      model: selectedModel.trim(),
       input,
       stream,
     };

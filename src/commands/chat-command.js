@@ -1,3 +1,5 @@
+import { appMetadata } from "../config/app-metadata.js";
+
 export function createChatCommand(commandService) {
   return {
     name: "chat",
@@ -12,7 +14,7 @@ export function createChatCommand(commandService) {
         .option("--session <id>", "Resume an existing session by id")
         .addHelpText(
           "after",
-          "\nExample:\n  aidevchef chat --mode default --session local-dev"
+          `\nExample:\n  ${appMetadata.cliName} chat --mode default --session local-dev`
         )
         .action(async (options) => {
           await commandService.chat({

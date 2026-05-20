@@ -1,15 +1,14 @@
 {
-  "name": "ai-dev-chef",
+  "name": "fortify",
   "version": "0.1.0",
   "description": "AI-powered developer assistant CLI scaffold.",
   "type": "module",
   "private": true,
   "bin": {
-    "ai-dev-chef": "./bin/ai-dev-chef.js",
-    "aidevchef": "./bin/ai-dev-chef.js"
+    "fortify": "./bin/fortify.js"
   },
   "scripts": {
-    "start": "node ./bin/ai-dev-chef.js"
+    "start": "node ./bin/fortify.js"
   },
   "engines": {
     "node": ">=20.0.0"

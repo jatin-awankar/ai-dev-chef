@@ -1,3 +1,5 @@
+import { appMetadata } from "../config/app-metadata.js";
+
 export function createSummarizeCommand(commandService) {
   return {
     name: "summarize",
@@ -12,7 +14,7 @@ export function createSummarizeCommand(commandService) {
         .option("-f, --format <format>", "Summary format", "bullet")
         .addHelpText(
           "after",
-          "\nExample:\n  aidevchef summarize src --format bullet"
+          `\nExample:\n  ${appMetadata.cliName} summarize src --format bullet`
         )
         .action(async (targetPath, options) => {
           await commandService.summarize({

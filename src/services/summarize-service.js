@@ -1,4 +1,5 @@
 import path from "node:path";
+import { appMetadata } from "../config/app-metadata.js";
 import {
   buildChunkSummaryInput,
   buildChunkSummaryInstructions,
@@ -40,7 +41,9 @@ export class SummarizeService {
 
   async runSummaryFlow({ sourcePath, format = "bullet" } = {}) {
     if (!sourcePath) {
-      this.renderer.showError("A target path is required. Usage: aidevchef summarize <path>");
+      this.renderer.showError(
+        `A target path is required. Usage: ${appMetadata.cliName} summarize <path>`
+      );
       return { ok: false, reason: "missing_path" };
     }
 

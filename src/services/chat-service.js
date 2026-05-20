@@ -98,7 +98,10 @@ export class ChatService {
         try {
           const stream = this.openAIService.streamResponse({
             input: responseInput,
-            signal: generationAbortController.signal
+            signal: generationAbortController.signal,
+            onModelFallback: ({ fromModel, toModel }) => {
+              this.renderer.showModelFallback({ fromModel, toModel });
+            },
           });
 
           const assistantMessage = await this.renderer.renderAssistantStream(stream, {

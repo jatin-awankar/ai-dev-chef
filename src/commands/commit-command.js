@@ -1,3 +1,5 @@
+import { appMetadata } from "../config/app-metadata.js";
+
 export function createCommitCommand(commandService) {
   return {
     name: "commit",
@@ -13,7 +15,7 @@ export function createCommitCommand(commandService) {
         .option("-y, --yes", "Skip confirmation and commit automatically")
         .addHelpText(
           "after",
-          "\nExample:\n  aidevchef commit --style conventional --scope cli"
+          `\nExample:\n  ${appMetadata.cliName} commit --style conventional --scope cli`
         )
         .action(async (options) => {
           await commandService.commit({

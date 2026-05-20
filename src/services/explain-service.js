@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { appMetadata } from "../config/app-metadata.js";
 import { buildExplainInput, buildExplainInstructions } from "../prompts/explain-error-prompt.js";
 import { ExplainRenderer } from "../renderers/index.js";
 import { detectNodeStackTrace } from "../utils/stack-trace.js";
@@ -31,7 +32,9 @@ export class ExplainService {
 
   async runExplainFlow({ target, context = "" } = {}) {
     if (!target) {
-      this.renderer.showError("Target is required. Usage: aidevchef explain <file-or-text>");
+      this.renderer.showError(
+        `Target is required. Usage: ${appMetadata.cliName} explain <file-or-text>`
+      );
       return { ok: false, reason: "missing_target" };
     }
 

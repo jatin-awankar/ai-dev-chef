@@ -1,3 +1,5 @@
+import { appMetadata } from "../config/app-metadata.js";
+
 export function createExplainCommand(commandService) {
   return {
     name: "explain",
@@ -12,7 +14,7 @@ export function createExplainCommand(commandService) {
         .option("-c, --context <text>", "Additional context to improve explanation")
         .addHelpText(
           "after",
-          "\nExamples:\n  aidevchef explain ./logs/error.log\n  aidevchef explain \"TypeError: x is not a function\\n    at main (index.js:12:3)\""
+          `\nExamples:\n  ${appMetadata.cliName} explain ./logs/error.log\n  ${appMetadata.cliName} explain \"TypeError: x is not a function\\n    at main (index.js:12:3)\"`
         )
         .action(async (targetInput, options) => {
           await commandService.explain({

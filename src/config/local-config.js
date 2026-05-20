@@ -1,8 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-const CONFIG_DIRECTORY_NAME = ".aidevchef";
+const CONFIG_DIRECTORY_NAME = ".fortify";
+const LEGACY_CONFIG_DIRECTORY_NAME = ".aidevchef";
 const CONFIG_FILE_NAME = "config.json";
 
 const DEFAULT_CONFIG = {
@@ -10,8 +11,8 @@ const DEFAULT_CONFIG = {
     openai: "",
   },
   modelPreferences: {
-    defaultModel: "gpt-5.1",
-    fallbackModel: "gpt-5.4-mini",
+    defaultModel: "gpt-5.4",
+    fallbackModels: ["gpt-5.3", "gpt-5.4-mini"],
   },
   theme: {
     name: "default",
@@ -54,11 +55,43 @@ export function getConfigPath() {
   return path.join(getConfigDirectory(), CONFIG_FILE_NAME);
 }
 
+function getLegacyConfigPath() {
+  return path.join(homedir(), LEGACY_CONFIG_DIRECTORY_NAME, CONFIG_FILE_NAME);
+}
+
+async function migrateLegacyConfigIfNeeded() {
+  const configPath = getConfigPath();
+
+  try {
+    await access(configPath);
+    return;
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  const legacyConfigPath = getLegacyConfigPath();
+
+  try {
+    const legacyConfigContent = await readFile(legacyConfigPath, "utf8");
+    await mkdir(getConfigDirectory(), { recursive: true });
+    await writeFile(configPath, legacyConfigContent, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+}
+
 export function getDefaultConfig() {
   return structuredClone(DEFAULT_CONFIG);
 }
 
 export async function loadConfig() {
+  await migrateLegacyConfigIfNeeded();
   const configPath = getConfigPath();
 
   try {
