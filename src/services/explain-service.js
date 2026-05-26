@@ -1,8 +1,12 @@
-import { readFile, stat } from "node:fs/promises";
+﻿import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { appMetadata } from "../config/app-metadata.js";
 import { buildExplainInput, buildExplainInstructions } from "../prompts/explain-error-prompt.js";
 import { ExplainRenderer } from "../renderers/index.js";
+import {
+  createCancellationController,
+  isAbortLikeError
+} from "../utils/operation-cancellation.js";
 import { detectNodeStackTrace } from "../utils/stack-trace.js";
 import { OpenAIService } from "./openai/index.js";
 
@@ -54,14 +58,10 @@ export class ExplainService {
     });
     this.renderer.showStackTraceDetection(stackTrace);
 
-    const explanationController = new AbortController();
-    const handleSigint = () => {
-      if (!explanationController.signal.aborted) {
-        explanationController.abort(new Error("Explanation cancelled by Ctrl+C."));
-      }
-    };
-
-    this.signalProcess.on("SIGINT", handleSigint);
+    const { controller: explanationController, cleanup: cleanupCancellation } = createCancellationController({
+      signalProcess: this.signalProcess,
+      cancelMessage: "Explanation cancelled by Ctrl+C."
+    });
 
     try {
       const instructions = buildExplainInstructions({
@@ -94,7 +94,7 @@ export class ExplainService {
         explanation
       };
     } catch (error) {
-      if (explanationController.signal.aborted) {
+      if (explanationController.signal.aborted || isAbortLikeError(error)) {
         this.renderer.showCancelled();
         return { ok: false, reason: "cancelled" };
       }
@@ -103,7 +103,7 @@ export class ExplainService {
       this.renderer.showError(message);
       return { ok: false, reason: "error", error };
     } finally {
-      this.signalProcess.off("SIGINT", handleSigint);
+      cleanupCancellation();
     }
   }
 

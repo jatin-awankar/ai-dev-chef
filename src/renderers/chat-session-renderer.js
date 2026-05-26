@@ -1,4 +1,4 @@
-import { appMetadata } from "../config/app-metadata.js";
+﻿import { appMetadata } from "../config/app-metadata.js";
 import { createTerminalUI } from "./terminal-ui.js";
 import { StreamRenderCancelledError } from "./streaming-terminal-renderer.js";
 import { MarkdownTerminalRenderer } from "./markdown-terminal-renderer.js";
@@ -59,6 +59,10 @@ export class ChatSessionRenderer {
     this.terminalUI.warning(
       `Model limit reached for ${fromModel}. Retrying with ${toModel}.`,
     );
+  }
+
+  showWarning(message) {
+    this.terminalUI.warning(message);
   }
 
   showError(errorMessage) {

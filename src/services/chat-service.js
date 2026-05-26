@@ -1,7 +1,11 @@
-import { createInterface } from "node:readline/promises";
+﻿import { createInterface } from "node:readline/promises";
 import { ChatSessionRenderer } from "../renderers/index.js";
 import { InMemoryConversationStore } from "../storage/in-memory-conversation-store.js";
 import { LocalHistoryStore } from "../storage/local-history-store.js";
+import {
+  bindCtrlCCancellation,
+  isAbortLikeError
+} from "../utils/operation-cancellation.js";
 import { OpenAIService } from "./openai/index.js";
 
 function normalizeSessionId(sessionId) {
@@ -48,24 +52,24 @@ export class ChatService {
     });
 
     let exitRequested = false;
-    let isGenerating = false;
     let promptAbortController = null;
     let generationAbortController = null;
 
-    const handleSigint = () => {
-      if (isGenerating && generationAbortController && !generationAbortController.signal.aborted) {
-        generationAbortController.abort(new Error("Cancelled by Ctrl+C."));
-        return;
+    const unbindSigint = bindCtrlCCancellation({
+      signalProcess: this.signalProcess,
+      onCancel: () => {
+        exitRequested = true;
+
+        if (generationAbortController && !generationAbortController.signal.aborted) {
+          generationAbortController.abort(new Error("Cancelled by Ctrl+C."));
+        }
+
+        if (promptAbortController && !promptAbortController.signal.aborted) {
+          promptAbortController.abort(new Error("Interrupted by Ctrl+C."));
+        }
       }
+    });
 
-      exitRequested = true;
-
-      if (promptAbortController && !promptAbortController.signal.aborted) {
-        promptAbortController.abort(new Error("Interrupted by Ctrl+C."));
-      }
-    };
-
-    this.signalProcess.on("SIGINT", handleSigint);
     this.renderer.showSessionStart({ mode, sessionId: session.id });
 
     try {
@@ -101,7 +105,6 @@ export class ChatService {
         const responseInput = this.conversationStore.toResponseInput(session.id);
 
         generationAbortController = new AbortController();
-        isGenerating = true;
 
         try {
           const stream = this.openAIService.streamResponse({
@@ -124,14 +127,14 @@ export class ChatService {
             await this.#persistSession(session.id);
           }
         } catch (error) {
-          if (this.#isAbortLikeError(error)) {
+          if (generationAbortController.signal.aborted || isAbortLikeError(error)) {
+            exitRequested = true;
             continue;
           }
 
           this.renderer.showError(error instanceof Error ? error.message : "Chat request failed.");
         } finally {
           generationAbortController = null;
-          isGenerating = false;
         }
       }
     } finally {
@@ -143,7 +146,7 @@ export class ChatService {
         generationAbortController.abort(new Error("Chat session closed."));
       }
 
-      this.signalProcess.off("SIGINT", handleSigint);
+      unbindSigint();
       readlineInterface.close();
       await this.#persistSession(session.id);
       this.renderer.showSessionEnd();
@@ -162,7 +165,7 @@ export class ChatService {
         return null;
       }
 
-      if (this.#isAbortLikeError(error)) {
+      if (isAbortLikeError(error)) {
         return null;
       }
 
@@ -173,18 +176,6 @@ export class ChatService {
   #isExitCommand(input) {
     const normalizedInput = input.toLowerCase();
     return normalizedInput === "/exit" || normalizedInput === "exit" || normalizedInput === "quit";
-  }
-
-  #isAbortLikeError(error) {
-    if (error?.name === "AbortError" || error?.name === "APIUserAbortError") {
-      return true;
-    }
-
-    if (error?.code === "ABORT_ERR") {
-      return true;
-    }
-
-    return false;
   }
 
   async #persistSession(sessionId) {
@@ -213,6 +204,6 @@ export class ChatService {
     this.historyPersistenceDisabled = true;
     const message =
       error instanceof Error ? error.message : "History persistence is unavailable in this environment.";
-    this.renderer.showError(`History persistence disabled: ${message}`);
+    this.renderer.showWarning(`History persistence disabled: ${message}`);
   }
 }

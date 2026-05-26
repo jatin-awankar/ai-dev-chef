@@ -1,4 +1,4 @@
-# Fortify &middot; [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jatin-awankar/fortify/blob/main/LICENSE)
+﻿# Fortify &middot; [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jatin-awankar/fortify/blob/main/LICENSE)
 
 Fortify is a developer-focused terminal assistant that helps you explain errors, generate commit messages, summarize codebases, and streamline daily workflows directly from the CLI.
 
@@ -13,14 +13,10 @@ Built for developers who live in the terminal.
 - Error and stack trace explanation
 - File and folder summarization
 - Interactive chat mode
-- Local CLI configuration
+- Local CLI configuration and chat history persistence
 - Clean terminal UX with colors, prompts, and spinners
 
 ---
-
-<!-- ## Demo
-
-> Add a terminal GIF or screenshot here later. -->
 
 Example workflow:
 
@@ -36,6 +32,9 @@ fortify summarize ./src
 
 # Interactive AI chat
 fortify chat
+
+# Inspect saved chat sessions
+fortify history --list
 ```
 
 ---
@@ -94,6 +93,7 @@ fortify chat
 fortify explain ./crash.log
 fortify commit
 fortify summarize ./src
+fortify history --list
 ```
 
 Use help anytime:
@@ -102,6 +102,34 @@ Use help anytime:
 fortify --help
 fortify <command> --help
 ```
+
+---
+
+## History Storage
+
+Fortify stores local chat history in:
+
+```text
+~/.fortify/history
+```
+
+Use:
+
+```bash
+fortify history --list
+fortify history --show <session-id>
+fortify history --clear
+```
+
+---
+
+## Cancellation Behavior
+
+All interactive and streaming flows handle `Ctrl+C` gracefully:
+
+- In `fortify chat`, `Ctrl+C` exits the chat loop cleanly.
+- During streaming commands (`explain`, `summarize`, `commit`), `Ctrl+C` cancels the active generation without noisy stack traces.
+- Cancelled flows return exit code `130`.
 
 ---
 
@@ -158,4 +186,4 @@ fortify
 
 ## License
 
-MIT — see [LICENSE](./LICENSE)
+MIT - see [LICENSE](./LICENSE)

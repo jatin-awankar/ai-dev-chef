@@ -51,7 +51,7 @@ function normalizeSessionPayload(payload, limits) {
     id,
     createdAt,
     messages: messages.slice(-limits.maxMessagesPerSession).map((message) => normalizeMessage(message, limits)),
-    updatedAt: new Date().toISOString()
+    updatedAt: typeof payload?.updatedAt === "string" ? payload.updatedAt : new Date().toISOString()
   };
 }
 
@@ -114,20 +114,21 @@ export class LocalHistoryStore {
     const files = entries
       .filter((entry) => entry.isFile() && entry.name.endsWith(HISTORY_FILE_EXTENSION))
       .map((entry) => entry.name)
-      .sort((left, right) => right.localeCompare(left));
+      .slice(0, this.limits.maxSessionFiles);
 
     const sessions = [];
-    for (const fileName of files.slice(0, this.limits.maxSessionFiles)) {
+    for (const fileName of files) {
       const sessionId = fileName.slice(0, -HISTORY_FILE_EXTENSION.length);
+      const filePath = path.join(this.getHistoryDirectory(), fileName);
+      const details = await stat(filePath);
       const session = await this.loadSession(sessionId);
-      if (session) {
-        sessions.push({
-          id: session.id,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
-          messageCount: session.messages.length
-        });
-      }
+
+      sessions.push({
+        id: sessionId,
+        createdAt: new Date(details.birthtimeMs || details.ctimeMs).toISOString(),
+        updatedAt: new Date(details.mtimeMs).toISOString(),
+        messageCount: Array.isArray(session?.messages) ? session.messages.length : 0
+      });
     }
 
     sessions.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));

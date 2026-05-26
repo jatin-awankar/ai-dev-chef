@@ -1,9 +1,10 @@
-import { AuthService } from "./auth-service.js";
+﻿import { AuthService } from "./auth-service.js";
 import { ChatService } from "./chat-service.js";
 import { CommitService } from "./commit-service.js";
 import { ExplainService } from "./explain-service.js";
 import { HistoryService } from "./history-service.js";
 import { SummarizeService } from "./summarize-service.js";
+import { USER_CANCELLED_EXIT_CODE } from "../utils/operation-cancellation.js";
 
 export class CommandService {
   constructor({
@@ -28,9 +29,7 @@ export class CommandService {
       context: input?.context ?? ""
     });
 
-    if (!result?.ok) {
-      process.exitCode = 1;
-    }
+    this.#setExitCodeFromResult(result);
   }
 
   async commit(input) {
@@ -40,9 +39,7 @@ export class CommandService {
       autoCommit: Boolean(input?.yes)
     });
 
-    if (!result?.ok) {
-      process.exitCode = 1;
-    }
+    this.#setExitCodeFromResult(result);
   }
 
   async summarize(input) {
@@ -51,9 +48,7 @@ export class CommandService {
       format: input?.format ?? "bullet"
     });
 
-    if (!result?.ok) {
-      process.exitCode = 1;
-    }
+    this.#setExitCodeFromResult(result);
   }
 
   async chat(input) {
@@ -68,9 +63,7 @@ export class CommandService {
       clear: Boolean(input?.clear)
     });
 
-    if (!result?.ok) {
-      process.exitCode = 1;
-    }
+    this.#setExitCodeFromResult(result);
   }
 
   async auth(input) {
@@ -78,6 +71,17 @@ export class CommandService {
     const isAuthenticated = await this.authService.authenticateOpenAIKey();
 
     if (!isAuthenticated) {
+      process.exitCode = 1;
+    }
+  }
+
+  #setExitCodeFromResult(result) {
+    if (!result?.ok && result?.reason === "cancelled") {
+      process.exitCode = USER_CANCELLED_EXIT_CODE;
+      return;
+    }
+
+    if (!result?.ok) {
       process.exitCode = 1;
     }
   }

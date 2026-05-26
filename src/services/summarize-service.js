@@ -1,4 +1,4 @@
-import path from "node:path";
+﻿import path from "node:path";
 import { appMetadata } from "../config/app-metadata.js";
 import {
   buildChunkSummaryInput,
@@ -12,6 +12,10 @@ import {
   readTextFileForSummary,
   resolveSourcePath
 } from "../utils/project-files.js";
+import {
+  createCancellationController,
+  isAbortLikeError
+} from "../utils/operation-cancellation.js";
 import { chunkText } from "../utils/text-chunker.js";
 import { estimateTokenCountFromText, trimItemsToTokenBudget } from "../utils/token-safety.js";
 import { OpenAIService } from "./openai/index.js";
@@ -78,14 +82,10 @@ export class SummarizeService {
 
     this.renderer.showDiscovery({ fileCount: filesToProcess.length });
 
-    const summaryController = new AbortController();
-    const handleSigint = () => {
-      if (!summaryController.signal.aborted) {
-        summaryController.abort(new Error("Summary cancelled by Ctrl+C."));
-      }
-    };
-
-    this.signalProcess.on("SIGINT", handleSigint);
+    const { controller: summaryController, cleanup: cleanupCancellation } = createCancellationController({
+      signalProcess: this.signalProcess,
+      cancelMessage: "Summary cancelled by Ctrl+C."
+    });
 
     let chunkSummaryEntries = [];
     let totalChunksProcessed = 0;
@@ -228,7 +228,7 @@ export class SummarizeService {
         summary: finalSummaryText
       };
     } catch (error) {
-      if (summaryController.signal.aborted) {
+      if (summaryController.signal.aborted || isAbortLikeError(error)) {
         this.renderer.showTokenGuardNotice("Summary generation cancelled.");
         return { ok: false, reason: "cancelled" };
       }
@@ -237,7 +237,7 @@ export class SummarizeService {
       this.renderer.showError(message);
       return { ok: false, reason: "error", error };
     } finally {
-      this.signalProcess.off("SIGINT", handleSigint);
+      cleanupCancellation();
     }
   }
 }

@@ -1,4 +1,4 @@
-﻿import { StreamRenderCancelledError } from "./streaming-terminal-renderer.js";
+import { StreamRenderCancelledError } from "./streaming-terminal-renderer.js";
 import { highlightCodeLine } from "./code-highlighter.js";
 
 function chunkToText(chunk) {
@@ -150,8 +150,15 @@ export class MarkdownTerminalRenderer {
   }
 
   #renderLine(line, withNewline) {
-    const trimmed = line.trim();
-    const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_-]+)?/);
+    const normalizedLine = line.replace(/\r$/, "");
+    const trimmed = normalizedLine.trim();
+
+    if (!trimmed) {
+      this.#write(withNewline ? "\n" : "");
+      return;
+    }
+
+    const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_-]+)?\s*$/);
 
     if (fenceMatch) {
       if (!this.#inCodeBlock) {
@@ -174,7 +181,7 @@ export class MarkdownTerminalRenderer {
     }
 
     if (this.#inCodeBlock) {
-      const highlighted = highlightCodeLine(line, {
+      const highlighted = highlightCodeLine(normalizedLine, {
         language: this.#codeLanguage,
         chalk: this.terminalUI?.chalk
       });
@@ -182,7 +189,7 @@ export class MarkdownTerminalRenderer {
       return;
     }
 
-    const headingMatch = line.match(/^\s*(#{1,6})\s+(.+)$/);
+    const headingMatch = normalizedLine.match(/^\s*(#{1,6})\s+(.+)$/);
     if (headingMatch) {
       const level = headingMatch[1].length;
       const headingText = this.#formatInlineMarkdown(headingMatch[2]);
@@ -193,9 +200,9 @@ export class MarkdownTerminalRenderer {
       return;
     }
 
-    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+    const listMatch = normalizedLine.match(/^([ \t]*)([-*+]|\d+\.)\s+(.+)$/);
     if (listMatch) {
-      const indent = listMatch[1] ?? "";
+      const indent = (listMatch[1] ?? "").replace(/\t/g, "  ");
       const bullet = listMatch[2];
       const content = this.#formatInlineMarkdown(listMatch[3]);
       const bulletText = this.terminalUI?.chalk?.yellow(bullet) ?? bullet;
@@ -203,7 +210,7 @@ export class MarkdownTerminalRenderer {
       return;
     }
 
-    const inlineFormatted = this.#formatInlineMarkdown(line);
+    const inlineFormatted = this.#formatInlineMarkdown(normalizedLine);
     this.#write(`${inlineFormatted}${withNewline ? "\n" : ""}`);
   }
 
@@ -212,7 +219,7 @@ export class MarkdownTerminalRenderer {
       return "";
     }
 
-    return line.replace(/`([^`]+)`/g, (_match, inlineCode) => {
+    return line.replace(/(?<!\\)`([^`\n]+)`/g, (_match, inlineCode) => {
       if (this.terminalUI?.chalk && this.terminalUI?.capabilities?.shouldUseColor) {
         return this.terminalUI.chalk.bgBlackBright.white(` ${inlineCode} `);
       }

@@ -1,8 +1,12 @@
-import {
+﻿import {
   buildCommitMessageInput,
   buildCommitMessageInstructions
 } from "../prompts/commit-message-prompt.js";
 import { CommitRenderer } from "../renderers/index.js";
+import {
+  createCancellationController,
+  isAbortLikeError
+} from "../utils/operation-cancellation.js";
 import { GitService } from "./git-service.js";
 import { OpenAIService } from "./openai/index.js";
 
@@ -57,14 +61,10 @@ export class CommitService {
     const branchName = await this.gitService.getCurrentBranchName();
     this.renderer.showContext({ branchName, style, scope });
 
-    const generationController = new AbortController();
-    const handleSigint = () => {
-      if (!generationController.signal.aborted) {
-        generationController.abort(new Error("Commit generation cancelled by Ctrl+C."));
-      }
-    };
-
-    this.signalProcess.on("SIGINT", handleSigint);
+    const { controller: generationController, cleanup: cleanupCancellation } = createCancellationController({
+      signalProcess: this.signalProcess,
+      cancelMessage: "Commit generation cancelled by Ctrl+C."
+    });
 
     try {
       const instructions = buildCommitMessageInstructions({ style, scope });
@@ -115,7 +115,7 @@ export class CommitService {
         output: commitResult.output
       };
     } catch (error) {
-      if (generationController.signal.aborted) {
+      if (generationController.signal.aborted || isAbortLikeError(error)) {
         this.renderer.showCommitSkipped();
         return { ok: false, reason: "cancelled" };
       }
@@ -124,7 +124,7 @@ export class CommitService {
       this.renderer.showError(message);
       return { ok: false, reason: "error", error };
     } finally {
-      this.signalProcess.off("SIGINT", handleSigint);
+      cleanupCancellation();
     }
   }
 }
