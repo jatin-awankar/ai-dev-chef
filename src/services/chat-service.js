@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { ChatSessionRenderer } from "../renderers/index.js";
 import { InMemoryConversationStore } from "../storage/in-memory-conversation-store.js";
+import { LocalHistoryStore } from "../storage/local-history-store.js";
 import { OpenAIService } from "./openai/index.js";
 
 function normalizeSessionId(sessionId) {
@@ -15,6 +16,7 @@ export class ChatService {
   constructor({
     openAIService = new OpenAIService(),
     conversationStore = new InMemoryConversationStore(),
+    historyStore = new LocalHistoryStore(),
     renderer = new ChatSessionRenderer(),
     input = process.stdin,
     output = process.stdout,
@@ -22,15 +24,20 @@ export class ChatService {
   } = {}) {
     this.openAIService = openAIService;
     this.conversationStore = conversationStore;
+    this.historyStore = historyStore;
     this.renderer = renderer;
     this.input = input;
     this.output = output;
     this.signalProcess = signalProcess;
+    this.historyPersistenceDisabled = false;
   }
 
   async startInteractiveChat({ mode = "default", sessionId = "" } = {}) {
     const resolvedSessionId = normalizeSessionId(sessionId);
-    const session = this.conversationStore.getOrCreateSession(resolvedSessionId);
+    const existingSession = await this.#loadSessionFromHistory(resolvedSessionId);
+    const session = existingSession
+      ? this.conversationStore.hydrateSession(existingSession)
+      : this.conversationStore.getOrCreateSession(resolvedSessionId);
 
     const readlineInterface = createInterface({
       input: this.input,
@@ -89,6 +96,7 @@ export class ChatService {
           role: "user",
           content: trimmedInput
         });
+        await this.#persistSession(session.id);
 
         const responseInput = this.conversationStore.toResponseInput(session.id);
 
@@ -113,6 +121,7 @@ export class ChatService {
               role: "assistant",
               content: assistantMessage
             });
+            await this.#persistSession(session.id);
           }
         } catch (error) {
           if (this.#isAbortLikeError(error)) {
@@ -136,6 +145,7 @@ export class ChatService {
 
       this.signalProcess.off("SIGINT", handleSigint);
       readlineInterface.close();
+      await this.#persistSession(session.id);
       this.renderer.showSessionEnd();
     }
   }
@@ -175,5 +185,34 @@ export class ChatService {
     }
 
     return false;
+  }
+
+  async #persistSession(sessionId) {
+    const session = this.conversationStore.getSession(sessionId);
+    try {
+      await this.historyStore.saveSession(session);
+    } catch (error) {
+      this.#disableHistoryPersistence(error);
+    }
+  }
+
+  async #loadSessionFromHistory(sessionId) {
+    try {
+      return await this.historyStore.loadSession(sessionId);
+    } catch (error) {
+      this.#disableHistoryPersistence(error);
+      return null;
+    }
+  }
+
+  #disableHistoryPersistence(error) {
+    if (this.historyPersistenceDisabled) {
+      return;
+    }
+
+    this.historyPersistenceDisabled = true;
+    const message =
+      error instanceof Error ? error.message : "History persistence is unavailable in this environment.";
+    this.renderer.showError(`History persistence disabled: ${message}`);
   }
 }

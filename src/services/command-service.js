@@ -2,6 +2,7 @@ import { AuthService } from "./auth-service.js";
 import { ChatService } from "./chat-service.js";
 import { CommitService } from "./commit-service.js";
 import { ExplainService } from "./explain-service.js";
+import { HistoryService } from "./history-service.js";
 import { SummarizeService } from "./summarize-service.js";
 
 export class CommandService {
@@ -10,12 +11,14 @@ export class CommandService {
     chatService = new ChatService(),
     commitService = new CommitService(),
     explainService = new ExplainService(),
+    historyService = new HistoryService(),
     summarizeService = new SummarizeService()
   } = {}) {
     this.authService = authService;
     this.chatService = chatService;
     this.commitService = commitService;
     this.explainService = explainService;
+    this.historyService = historyService;
     this.summarizeService = summarizeService;
   }
 
@@ -58,6 +61,16 @@ export class CommandService {
       mode: input?.mode ?? "default",
       sessionId: input?.sessionId ?? ""
     });
+  }
+
+  async history(input) {
+    const result = await this.historyService.showHistory({
+      clear: Boolean(input?.clear)
+    });
+
+    if (!result?.ok) {
+      process.exitCode = 1;
+    }
   }
 
   async auth(input) {

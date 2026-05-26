@@ -37,6 +37,27 @@ export class InMemoryConversationStore {
     return nextSession;
   }
 
+  hydrateSession(session) {
+    if (!session || typeof session !== "object") {
+      return this.getOrCreateSession("default");
+    }
+
+    const normalizedSession = {
+      id: buildSessionId(session.id),
+      createdAt: typeof session.createdAt === "string" ? session.createdAt : new Date().toISOString(),
+      messages: Array.isArray(session.messages)
+        ? session.messages.map((message) => ({
+            role: normalizeRole(message?.role),
+            content: typeof message?.content === "string" ? message.content : String(message?.content ?? ""),
+            createdAt: typeof message?.createdAt === "string" ? message.createdAt : new Date().toISOString()
+          }))
+        : []
+    };
+
+    this.sessions.set(normalizedSession.id, normalizedSession);
+    return normalizedSession;
+  }
+
   addMessage(sessionId, { role, content }) {
     const session = this.getOrCreateSession(sessionId);
     const normalizedContent = typeof content === "string" ? content : String(content ?? "");
@@ -57,5 +78,9 @@ export class InMemoryConversationStore {
       role: message.role,
       content: message.content
     }));
+  }
+
+  getSession(sessionId = "default") {
+    return this.getOrCreateSession(sessionId);
   }
 }
