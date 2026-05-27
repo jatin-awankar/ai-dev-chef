@@ -6,6 +6,12 @@ Built for developers who live in the terminal.
 
 ---
 
+## Demo
+
+![Fortify Demo](./assets/demo.gif)
+
+---
+
 ## Features
 
 - Streaming AI responses directly in terminal
