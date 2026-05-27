@@ -9,6 +9,7 @@ import {
 } from "../utils/operation-cancellation.js";
 import { GitService } from "./git-service.js";
 import { OpenAIService } from "./openai/index.js";
+import { getDemoProfile, isDemoModeEnabled } from "./demo/index.js";
 
 function normalizeCommitMessage(rawMessage) {
   if (typeof rawMessage !== "string") {
@@ -45,20 +46,22 @@ export class CommitService {
   }
 
   async runCommitFlow({ style = "conventional", scope = "", autoCommit = false } = {}) {
-    const isRepository = await this.gitService.isGitRepository();
+    const demoMode = isDemoModeEnabled();
+    const demoProfile = getDemoProfile();
+    const isRepository = demoMode ? true : await this.gitService.isGitRepository();
 
     if (!isRepository) {
       this.renderer.showNotGitRepository();
       return { ok: false, reason: "not_git_repository" };
     }
 
-    const stagedDiff = await this.gitService.getStagedDiff();
+    const stagedDiff = demoMode ? DEMO_STAGED_DIFF : await this.gitService.getStagedDiff();
     if (!stagedDiff.trim()) {
       this.renderer.showNoStagedChanges();
       return { ok: false, reason: "no_staged_changes" };
     }
 
-    const branchName = await this.gitService.getCurrentBranchName();
+    const branchName = demoMode ? "demo/showcase-streaming" : await this.gitService.getCurrentBranchName();
     this.renderer.showContext({ branchName, style, scope });
 
     const { controller: generationController, cleanup: cleanupCancellation } = createCancellationController({
@@ -80,6 +83,11 @@ export class CommitService {
       const stream = this.openAIService.streamResponse({
         input,
         instructions,
+        metadata: OpenAIService.buildDemoMetadata({
+          type: "commit",
+          profile: demoProfile,
+          extra: { command: "commit" },
+        }),
         signal: generationController.signal,
         temperature: 0.2,
         maxOutputTokens: 220
@@ -103,9 +111,9 @@ export class CommitService {
         return { ok: true, committed: false, message: commitMessage };
       }
 
-      const commitResult = await this.gitService.commitWithMessage({
-        message: commitMessage
-      });
+      const commitResult = demoMode
+        ? { output: "[demo] commit skipped (no git write in demo mode)." }
+        : await this.gitService.commitWithMessage({ message: commitMessage });
 
       this.renderer.showCommitExecuted(commitMessage);
       return {
@@ -128,3 +136,17 @@ export class CommitService {
     }
   }
 }
+
+const DEMO_STAGED_DIFF = `Modified:
+- src/renderers/streaming-terminal-renderer.js
+- src/services/demo/demo-mode.js
+- README.md
+
+diff --git a/src/services/demo/demo-mode.js b/src/services/demo/demo-mode.js
+index 8c2f..2a42 100644
+--- a/src/services/demo/demo-mode.js
++++ b/src/services/demo/demo-mode.js
+@@ -1,5 +1,10 @@
+ const DEMO_MODE_ENV_KEY = "FORTIFY_DEMO_MODE";
++const DEMO_PROFILE_ENV_KEY = "FORTIFY_DEMO_PROFILE";
+`;

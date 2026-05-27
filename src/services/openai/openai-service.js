@@ -2,6 +2,13 @@ import OpenAI from "openai";
 import { appMetadata } from "../../config/app-metadata.js";
 import { loadConfig } from "../../config/index.js";
 import { resolveModelChain } from "../../config/model-preferences.js";
+import {
+  createDemoRng,
+  getDemoSeed,
+  isDemoModeEnabled,
+  resolveDemoScenario,
+  streamMockScenario,
+} from "../demo/index.js";
 import { withRetry } from "../../utils/retry.js";
 import {
   OpenAIConfigurationError,
@@ -42,6 +49,23 @@ export class OpenAIService {
     signal,
     onModelFallback,
   }) {
+    if (isDemoModeEnabled()) {
+      const demoRng = this.#createDemoRng({ input, instructions, metadata, model });
+      const scenario = resolveDemoScenario({ input, instructions, metadata, rng: demoRng });
+      const outputText = scenario.final;
+      return {
+        id: `demo-${Date.now()}`,
+        model: "fortify-demo-model",
+        outputText,
+        response: {
+          id: `demo-${Date.now()}`,
+          model: "fortify-demo-model",
+          output_text: outputText,
+          metadata: scenario.metadata,
+        },
+      };
+    }
+
     return this.#executeWithModelFallback(
       async (selectedModel) => {
         const requestPayload = await this.#buildRequestPayload({
@@ -85,6 +109,13 @@ export class OpenAIService {
     signal,
     onModelFallback,
   }) {
+    if (isDemoModeEnabled()) {
+      const demoRng = this.#createDemoRng({ input, instructions, metadata, model });
+      const scenario = resolveDemoScenario({ input, instructions, metadata, rng: demoRng });
+      yield* streamMockScenario(scenario, { signal, rng: demoRng });
+      return;
+    }
+
     const modelChain = await this.#resolveModelChain(model);
     let lastError;
 
@@ -434,5 +465,25 @@ export class OpenAIService {
     }
 
     return false;
+  }
+
+  #createDemoRng({ input, instructions, metadata, model }) {
+    const seed = getDemoSeed();
+    if (!seed) {
+      return undefined;
+    }
+
+    const fingerprint = JSON.stringify({ seed, model, instructions, metadata, input });
+    return createDemoRng(fingerprint);
+  }
+
+  static buildDemoMetadata({ type, profile, extra } = {}) {
+    return {
+      ...(extra && typeof extra === "object" ? extra : {}),
+      demo: {
+        type: type ?? "chat",
+        profile: profile ?? "default",
+      },
+    };
   }
 }

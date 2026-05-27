@@ -19,6 +19,7 @@ import {
 import { chunkText } from "../utils/text-chunker.js";
 import { estimateTokenCountFromText, trimItemsToTokenBudget } from "../utils/token-safety.js";
 import { OpenAIService } from "./openai/index.js";
+import { getDemoProfile, isDemoModeEnabled } from "./demo/index.js";
 
 const SUMMARY_SAFETY_LIMITS = {
   maxFiles: 200,
@@ -63,6 +64,8 @@ export class SummarizeService {
     const { absolutePath, sourceStats } = resolvedSource;
     this.renderer.showStart({ sourcePath: absolutePath });
 
+    const demoMode = isDemoModeEnabled();
+    const demoProfile = getDemoProfile();
     let filesToProcess = [];
     if (sourceStats.isFile()) {
       filesToProcess = [absolutePath];
@@ -81,6 +84,30 @@ export class SummarizeService {
     }
 
     this.renderer.showDiscovery({ fileCount: filesToProcess.length });
+
+    if (demoMode) {
+      this.renderer.showPhase("Scanning project structure...");
+      this.renderer.showPhase("Indexed 57 files across 8 modules.");
+      this.renderer.showPhase("Inspecting renderer pipeline...");
+      this.renderer.showPhase("Analyzing async service boundaries...");
+      this.renderer.showFinalStart();
+
+      const stream = this.openAIService.streamResponse({
+        input: `Summarize project at ${absolutePath}`,
+        instructions: buildFinalSummaryInstructions({ format }),
+        metadata: OpenAIService.buildDemoMetadata({
+          type: "summarize",
+          profile: demoProfile,
+          extra: { command: "summarize", fileCount: 57, modules: 8 },
+        }),
+        temperature: 0.2,
+        maxOutputTokens: 800,
+      });
+
+      const summary = await this.renderer.renderFinalSummaryStream(stream);
+      this.renderer.showDone();
+      return { ok: true, summary };
+    }
 
     const { controller: summaryController, cleanup: cleanupCancellation } = createCancellationController({
       signalProcess: this.signalProcess,
@@ -213,6 +240,11 @@ export class SummarizeService {
           chunkSummaries: chunkSummariesForFinalInput
         }),
         instructions: buildFinalSummaryInstructions({ format }),
+        metadata: OpenAIService.buildDemoMetadata({
+          type: "summarize",
+          profile: demoProfile,
+          extra: { command: "summarize", fileCount: filesToProcess.length },
+        }),
         temperature: 0.2,
         maxOutputTokens: 1_200,
         signal: summaryController.signal

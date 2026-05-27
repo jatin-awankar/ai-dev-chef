@@ -9,6 +9,7 @@ import {
 } from "../utils/operation-cancellation.js";
 import { detectNodeStackTrace } from "../utils/stack-trace.js";
 import { OpenAIService } from "./openai/index.js";
+import { getDemoProfile } from "./demo/index.js";
 
 const MAX_INPUT_CHARS = 40_000;
 
@@ -79,6 +80,11 @@ export class ExplainService {
       const stream = this.openAIService.streamResponse({
         input,
         instructions,
+        metadata: OpenAIService.buildDemoMetadata({
+          type: "explain",
+          profile: getDemoProfile(),
+          extra: { command: "explain" },
+        }),
         temperature: 0.2,
         maxOutputTokens: 1_100,
         signal: explanationController.signal

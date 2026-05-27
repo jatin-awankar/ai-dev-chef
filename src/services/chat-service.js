@@ -7,6 +7,7 @@ import {
   isAbortLikeError
 } from "../utils/operation-cancellation.js";
 import { OpenAIService } from "./openai/index.js";
+import { getDemoProfile } from "./demo/index.js";
 
 function normalizeSessionId(sessionId) {
   if (typeof sessionId === "string" && sessionId.trim()) {
@@ -109,6 +110,11 @@ export class ChatService {
         try {
           const stream = this.openAIService.streamResponse({
             input: responseInput,
+            metadata: OpenAIService.buildDemoMetadata({
+              type: "chat",
+              profile: getDemoProfile(),
+              extra: { command: "chat", mode },
+            }),
             signal: generationAbortController.signal,
             onModelFallback: ({ fromModel, toModel }) => {
               this.renderer.showModelFallback({ fromModel, toModel });

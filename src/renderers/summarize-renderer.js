@@ -27,6 +27,10 @@ export class SummarizeRenderer {
     this.terminalUI.warning(message);
   }
 
+  showPhase(message) {
+    this.terminalUI.info(message);
+  }
+
   showChunkProgress({ filePath, chunkIndex, totalChunks }) {
     this.terminalUI.info(`Summarizing ${filePath} (${chunkIndex + 1}/${totalChunks})`);
   }
